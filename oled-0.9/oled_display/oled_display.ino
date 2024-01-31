@@ -1,22 +1,27 @@
-/**
-   adapted from palto42's code for the ssd1306 display https://github.com/palto42/komoot-navi
-*/
-
+#include "symbols.h"
 #include "BLEDevice.h"
+#include <Wire.h>
+#include <Adafruit_SSD1306.h>
+#include <Adafruit_GFX.h>
 
+#define OLED_WIDTH 128
+#define OLED_HEIGHT 64
+
+#define OLED_ADDR 0x3C
+int demodelay=2000;
 
 // The remote service we wish to connect to.
 static BLEUUID serviceUUID("71C1E128-D92F-4FA8-A2B2-0F171DB3436C");
 // The characteristic of the remote service we are interested in.
 static BLEUUID    charUUID("503DD605-9BCB-4F6E-B235-270A57483026");
-
+const  boolean run_app = true;
 static boolean doConnect = false;
 static boolean connected = false;
 static boolean doScan = false;
 static BLERemoteCharacteristic* pRemoteCharacteristic;
 static BLEAdvertisedDevice* kDevice;
 
-
+Adafruit_SSD1306 display(OLED_WIDTH, OLED_HEIGHT);
 
 /**
    Scan for BLE servers and find the first one that advertises the service we are looking for.
@@ -28,7 +33,6 @@ class AdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
     void onResult(BLEAdvertisedDevice advertisedDevice) {
       Serial.print("BLE Advertised Device found: ");
       Serial.println(advertisedDevice.toString().c_str());
-
       // We have found a device, let us now see if it contains the service we are looking for.
       if (advertisedDevice.haveServiceUUID() && advertisedDevice.isAdvertisingService(serviceUUID)) {
 
@@ -60,10 +64,19 @@ static void notifyCallback(
   bool isNotify) {
   Serial.print("Notify callback for characteristic ");
   Serial.print(pBLERemoteCharacteristic->getUUID().toString().c_str());
-  Serial.print(" of data length ");
-  Serial.println(length);
-  Serial.print("- data: ");
-  Serial.println((char*)pData);
+//  Serial.print(" of data length ");
+//  Serial.println(length);
+//  Serial.print("- data: ");
+//  
+//  for (int i = 0; i < length; i++){
+//    Serial.print((char)pData[i]);
+//  }
+//  
+//  Serial.println("");
+//  String str = (char*)pData;
+//  Serial.println(str);
+//  String new_str = str.substring(4, 4);
+//  Serial.println(new_str);
 }
 
 bool connectToServer() {
@@ -78,27 +91,33 @@ bool connectToServer() {
     // Connect to the remove BLE Server.
     pClient->connect(kDevice);  // if you pass BLEAdvertisedDevice instead of address, it will be recognized type of peer device address (public or private)
     Serial.println(" - Connected to server");
+    setSysMsg("Connected to server");
 
+    
     // Obtain a reference to the service we are after in the remote BLE server.
     BLERemoteService* pRemoteService = pClient->getService(serviceUUID);
     if (pRemoteService == nullptr) {
       Serial.print("Failed to find our service UUID: ");
+      setSysMsg("Failed to find our service UUID");
       Serial.println(serviceUUID.toString().c_str());
       pClient->disconnect();
       return false;
     }
     Serial.println(" - Found our service");
+    setSysMsg("Found our service");
 
 
     // Obtain a reference to the characteristic in the service of the remote BLE server.
     pRemoteCharacteristic = pRemoteService->getCharacteristic(charUUID);
     if (pRemoteCharacteristic == nullptr) {
       Serial.print("Failed to find our characteristic UUID: ");
+      setSysMsg("Failed to find our characteristic UUID");
       Serial.println(charUUID.toString().c_str());
       pClient->disconnect();
       return false;
     }
     Serial.println(" - Found our characteristic");
+    setSysMsg("Found our characteristic");
 
     // Read the value of the characteristic.
     if(pRemoteCharacteristic->canRead()) {
@@ -107,43 +126,53 @@ bool connectToServer() {
       Serial.println(value.c_str());
     }
 
-    if(pRemoteCharacteristic->canNotify())
-      pRemoteCharacteristic->registerForNotify(notifyCallback);
+//    if(pRemoteCharacteristic->canNotify())
+//      pRemoteCharacteristic->registerForNotify(notifyCallback);
 
     connected = true;
     return true;
 }
 
+
+
 void setup() {
   Serial.begin(115200);
-  Serial.println("Starting Arduino BLE Client application...");
-  BLEDevice::init("Tonci");
-  // Display end
+  display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR);
 
-
-  // Retrieve a Scuranner and set the callback we want to use to be informed when we
-  // have detected a new device.  Specify that we want active scanning and start the
-  // scan to run for 5 seconds.
-  BLEScan* pBLEScan = BLEDevice::getScan();
-  pBLEScan->setAdvertisedDeviceCallbacks(new AdvertisedDeviceCallbacks());
-  pBLEScan->setInterval(1349);
-  pBLEScan->setWindow(449);
-  pBLEScan->setActiveScan(true);
-  pBLEScan->start(5, false);
-} // End of setup.
-
+  
+  if (run_app){
+    Serial.println("Starting Arduino BLE Client application...");
+    setSysMsg("Starting Arduino BLE Client");
+    BLEDevice::init("Tonci");
+    // Display end
+    // Retrieve a Scuranner and set the callback we want to use to be informed when we
+    // have detected a new device.  Specify that we want active scanning and start the
+    // scan to run for 5 seconds.
+    BLEScan* pBLEScan = BLEDevice::getScan();
+    pBLEScan->setAdvertisedDeviceCallbacks(new AdvertisedDeviceCallbacks());
+    pBLEScan->setInterval(1349);
+    pBLEScan->setWindow(449);
+    pBLEScan->setActiveScan(true);
+    pBLEScan->start(5, false);
+    delay(10000);
+  }
+}
 
 std::string old_street ;
 uint8_t dir;
 uint32_t dist2;
 
+
 void loop() {
- if (doConnect == true) {
+  if (run_app){
+   if (doConnect == true) {
     if (connectToServer()) {
       Serial.println("We are now connected to the BLE Server.");
+      setSysMsg("We are now connected to the BLE Server");
       delay(500);
     } else {
       Serial.println("We have failed to connect to the server; there is nothin more we will do.");
+      setSysMsg("We have failed to connect to the server;");
     }
     doConnect = false;
   }
@@ -182,11 +211,14 @@ void loop() {
       Serial.println(dist);
 //     }
      
-     
+       setupDisplay();
      }else if (doScan) {
         BLEDevice::getScan()->start(0);  // this is just eample to start scan after disconnect, most likely there is better way to do it in arduino
+        connected = false;
+        Serial.println("onDisconnect");
     }
   }
   
   delay(1000); // Delay a second between loops.
-} // End of loop
+  }
+ }
