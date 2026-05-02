@@ -1,18 +1,20 @@
 #include "symbols.h"
 #include "BLEDevice.h"
+#include <SPI.h>
 #include <Wire.h>
-#include <Adafruit_SSD1306.h>
 #include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
 
-#define OLED_WIDTH 128
-#define OLED_HEIGHT 64
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
 
-#define OLED_ADDR 0x3C
-int demodelay=2000;
+#define OLED_MOSI   23  //(SDA) 
+#define OLED_CLK    18  //(SCL) 
+#define OLED_DC     16  //(DC) 
+#define OLED_CS     5   //(CS) 
+#define OLED_RESET  17  //(RES) 
 
-// The remote service we wish to connect to.
 static BLEUUID serviceUUID("71C1E128-D92F-4FA8-A2B2-0F171DB3436C");
-// The characteristic of the remote service we are interested in.
 static BLEUUID    charUUID("503DD605-9BCB-4F6E-B235-270A57483026");
 const  boolean run_app = true;
 static boolean doConnect = false;
@@ -21,7 +23,36 @@ static boolean doScan = false;
 static BLERemoteCharacteristic* pRemoteCharacteristic;
 static BLEAdvertisedDevice* kDevice;
 
-Adafruit_SSD1306 display(OLED_WIDTH, OLED_HEIGHT);
+
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT,
+  OLED_MOSI, OLED_CLK, OLED_DC, OLED_RESET, OLED_CS);
+
+void IRAM_ATTR ISR() {
+   goToSleep();
+}
+
+void goToSleep(){
+   Serial.println("Going to sleep now");
+    delay(1000);
+    esp_deep_sleep_start();
+}
+
+void print_wakeup_reason(){
+  Serial.begin(115200);
+  esp_sleep_wakeup_cause_t wakeup_reason;
+
+  wakeup_reason = esp_sleep_get_wakeup_cause();
+
+  switch(wakeup_reason)
+  {
+    case ESP_SLEEP_WAKEUP_EXT0 : Serial.println("Wakeup caused by external signal using RTC_IO"); break;
+    case ESP_SLEEP_WAKEUP_EXT1 : Serial.println("Wakeup caused by external signal using RTC_CNTL"); break;
+    case ESP_SLEEP_WAKEUP_TIMER : Serial.println("Wakeup caused by timer"); break;
+    case ESP_SLEEP_WAKEUP_TOUCHPAD : Serial.println("Wakeup caused by touchpad"); break;
+    case ESP_SLEEP_WAKEUP_ULP : Serial.println("Wakeup caused by ULP program"); break;
+    default : Serial.printf("Wakeup was not caused by deep sleep: %d\n",wakeup_reason); break;
+  }
+}
 
 /**
    Scan for BLE servers and find the first one that advertises the service we are looking for.
@@ -56,28 +87,6 @@ class ClientCallback : public BLEClientCallbacks {
       Serial.println("onDisconnect");
     }
 };
-
-static void notifyCallback(
-  BLERemoteCharacteristic* pBLERemoteCharacteristic,
-  uint8_t* pData,
-  size_t length,
-  bool isNotify) {
-  Serial.print("Notify callback for characteristic ");
-  Serial.print(pBLERemoteCharacteristic->getUUID().toString().c_str());
-//  Serial.print(" of data length ");
-//  Serial.println(length);
-//  Serial.print("- data: ");
-//  
-//  for (int i = 0; i < length; i++){
-//    Serial.print((char)pData[i]);
-//  }
-//  
-//  Serial.println("");
-//  String str = (char*)pData;
-//  Serial.println(str);
-//  String new_str = str.substring(4, 4);
-//  Serial.println(new_str);
-}
 
 bool connectToServer() {
      Serial.print("Forming a connection to ");
@@ -133,16 +142,26 @@ bool connectToServer() {
     return true;
 }
 
-
-
 void setup() {
   Serial.begin(115200);
-  display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR);
+  print_wakeup_reason();
+  pinMode(GPIO_NUM_33, INPUT_PULLUP);
+  pinMode(GPIO_NUM_4, INPUT_PULLUP);
+  attachInterrupt(GPIO_NUM_4, ISR, FALLING);
+  esp_sleep_enable_ext0_wakeup(GPIO_NUM_33,0);
 
-  
-  if (run_app){
-    Serial.println("Starting Arduino BLE Client application...");
-    setSysMsg("Starting Arduino BLE Client");
+  if(!display.begin(SSD1306_SWITCHCAPVCC)) {
+      Serial.println(F("SSD1306 allocation failed"));
+      for(;;);
+  }
+  display.clearDisplay();
+
+  Serial.println("Starting BLE Client application...");
+  setSysMsg("Starting BLE Client");
+
+   if (run_app){
+    Serial.println("Starting BLE Client application...");
+    setSysMsg("Starting BLE Client");
     BLEDevice::init("Tonci");
     // Display end
     // Retrieve a Scuranner and set the callback we want to use to be informed when we
@@ -158,13 +177,20 @@ void setup() {
   }
 }
 
+
+
 std::string old_street ;
 uint8_t dir;
 uint32_t dist2;
-
+long lastUpdate = millis();
 
 void loop() {
-  if (run_app){
+  Serial.println(millis() - lastUpdate);
+    if((millis() - lastUpdate) > 120*1000){
+      goToSleep();
+    }
+  
+   if (run_app){
    if (doConnect == true) {
     if (connectToServer()) {
       Serial.println("We are now connected to the BLE Server.");
@@ -181,7 +207,8 @@ void loop() {
      std::string value = pRemoteCharacteristic->readValue();//this crashes sometimes, recieves the whole data packet
      if (value.length() > 4) {
       Serial.println("Update...");
-
+      lastUpdate = millis();
+      
      if (value.length() > 8) {
        std::string street = value.substr(9);//this causes abort when there are not at least 9 bytes available
 
@@ -216,9 +243,10 @@ void loop() {
         BLEDevice::getScan()->start(0);  // this is just eample to start scan after disconnect, most likely there is better way to do it in arduino
         connected = false;
         Serial.println("onDisconnect");
+        setSysMsg("Disconnect");
     }
   }
   
   delay(1000); // Delay a second between loops.
   }
- }
+}

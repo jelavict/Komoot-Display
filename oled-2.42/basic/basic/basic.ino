@@ -90,6 +90,8 @@ const unsigned char electronicshub_logo [] PROGMEM = {
 };
 
 void IRAM_ATTR ISR() {
+    //display.ssd1306_command(SSD1306_DISPLAYOFF);
+    //Serial.println("SSD1306_DISPLAYOFF");
     Serial.println("Going to sleep now");
     delay(1000);
     esp_deep_sleep_start();
@@ -120,8 +122,7 @@ void setup(){
 //  display.display();
 //  delay(1000);
 
- // display.ssd1306_command(SSD1306_DISPLAYOFF);
- // Serial.println("SSD1306_DISPLAYOFF");
+ 
  // delay(5000);
  // display.ssd1306_command(SSD1306_DISPLAYON);
  // Serial.println("SSD1306_DISPLAYON");
@@ -135,7 +136,9 @@ void setup(){
 
 void loop()
 {
-  int voltage = analogRead(GPIO_NUM_32);
+  int adcValue = analogRead(GPIO_NUM_32);
+  float voltage = ((float)adcValue / (4095)*3.3)+1.5;
+  
   Serial.print("Voltage: ");
   Serial.println(voltage);
   TextDisplay(voltage);
@@ -209,14 +212,14 @@ void AllPixels()
   
 }
 
-void TextDisplay(int voltage)
+void TextDisplay(float voltage)
 {
   display.clearDisplay();
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
   display.setCursor(5,28);
   String myString = String(voltage);
-  display.println(myString);
+  display.println(myString + "v");
   display.display();
   delay(3000);
 }
